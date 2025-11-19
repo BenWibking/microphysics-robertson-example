@@ -7,9 +7,15 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import re
+import sys
 from typing import Dict, List
 
 import matplotlib.pyplot as plt
+from urllib.error import URLError
+from urllib.request import urlopen
+
+REFERENCE_URL = "https://raw.githubusercontent.com/LLNL/sundials/master/examples/cvode/serial/cvRoberts_dns.out"
 
 
 def parse_table(lines: List[str]) -> Dict[str, List[float]]:
@@ -34,6 +40,35 @@ def parse_table(lines: List[str]) -> Dict[str, List[float]]:
     if not columns["time"]:
         raise ValueError("No numeric data found in input.")
     return columns
+
+
+def parse_reference_table(lines: List[str]) -> Dict[str, List[float]]:
+    """
+    Parse the CVODE reference output from the SUNDIALS repository.
+    """
+    pattern = re.compile(
+        r"At t =\s*([0-9.+-eE]+)\s+y =\s*([0-9.+-eE]+)\s+([0-9.+-eE]+)\s+([0-9.+-eE]+)"
+    )
+    columns = {"time": [], "y1": [], "y2": [], "y3": []}
+    for raw in lines:
+        match = pattern.search(raw)
+        if not match:
+            continue
+        values = list(map(float, match.groups()))
+        for key, value in zip(columns, values):
+            columns[key].append(value)
+    if not columns["time"]:
+        raise ValueError("Reference data download succeeded but no values were parsed.")
+    return columns
+
+
+def fetch_reference_table(url: str) -> Dict[str, List[float]]:
+    """
+    Download and parse the Robertson reference data from SUNDIALS.
+    """
+    with urlopen(url, timeout=30) as response:
+        text = response.read().decode("utf-8")
+    return parse_reference_table(text.splitlines())
 
 
 def main() -> None:
@@ -63,9 +98,54 @@ def main() -> None:
     lines = input_path.read_text().splitlines()
     data = parse_table(lines)
 
+    reference_data: Dict[str, List[float]] | None = None
+    try:
+        reference_data = fetch_reference_table(REFERENCE_URL)
+    except URLError as exc:
+        print(
+            f"Warning: failed to download SUNDIALS reference data ({exc}).",
+            file=sys.stderr,
+        )
+    except ValueError as exc:
+        print(f"Warning: {exc}", file=sys.stderr)
+    error_norms: Dict[str, float] | None = None
+    if reference_data:
+        error_norms = {}
+        reference_lookup = {
+            round(t, 12): {comp: reference_data[comp][idx] for comp in ("y1", "y2", "y3")}
+            for idx, t in enumerate(reference_data["time"])
+        }
+        missing_times: List[float] = []
+        for idx, t in enumerate(data["time"]):
+            key = round(t, 12)
+            ref_values = reference_lookup.get(key)
+            if ref_values is None:
+                missing_times.append(t)
+                continue
+            for comp in ("y1", "y2", "y3"):
+                error_norms.setdefault(comp, 0.0)
+                error_norms[comp] += abs(data[comp][idx] - ref_values[comp])
+        if missing_times:
+            print(
+                "Note: skipped time points absent from the reference table: "
+                + ", ".join(f"{value:.3e}" for value in missing_times),
+                file=sys.stderr,
+            )
+        if error_norms:
+            print("L1 error norms vs SUNDIALS reference:")
+            for key, value in error_norms.items():
+                print(f"  {key}: {value:.3e}")
+
     plt.figure(figsize=(7, 4))
     for key, label in [("y1", "y1"), ("y2", "y2"), ("y3", "y3")]:
-        plt.plot(data["time"], data[key], marker="o", label=label)
+        plt.plot(data["time"], data[key], marker="o", label=f"{label} (Microphysics)")
+        if reference_data:
+            plt.plot(
+                reference_data["time"],
+                reference_data[key],
+                linestyle="--",
+                label=f"{label} (SUNDIALS)",
+            )
     plt.xscale("log")
     plt.yscale("log")
     plt.xlabel("time")
