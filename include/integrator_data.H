@@ -11,6 +11,19 @@
 #include <network.H>
 #include <extern_parameters.H>
 
+#ifndef NET_LOOP_UNROLL_LEN
+#define NET_LOOP_UNROLL_LEN 1
+#endif
+
+#ifndef MICROPHYSICS_CUSTOM_JAC_T
+#ifdef SINGLE_PRECISION_JACOBIAN
+using jac_t = float;
+#else
+using jac_t = amrex::Real;
+#endif
+#define MICROPHYSICS_CUSTOM_JAC_T 1
+#endif
+
 using namespace amrex::literals;
 
 constexpr int INT_NEQS = NumSpec + 1;
@@ -36,6 +49,6 @@ constexpr int integrator_neqs()
 
 using IArray1D = amrex::Array1D<short, 1, INT_NEQS>;
 using RArray1D = amrex::Array1D<amrex::Real, 1, INT_NEQS>;
-using RArray2D = ArrayUtil::MathArray2D<1, INT_NEQS, 1, INT_NEQS>;
+using RArray2D = ArrayUtil::MathArray2D<jac_t, 1, INT_NEQS, 1, INT_NEQS>;
 
 #endif

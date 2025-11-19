@@ -11,6 +11,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 include(FetchContent)
 
 set(AMREX_TAG "development" CACHE STRING "AMReX tag to fetch")
+set(MICROPHYSICS_TAG "development" CACHE STRING "Microphysics tag to fetch")
+
 set(AMReX_SPACEDIM 1 CACHE STRING "Spatial dimension for AMReX" FORCE)
 set(AMReX_MPI OFF CACHE BOOL "Enable AMReX MPI support" FORCE)
 set(AMReX_OMP OFF CACHE BOOL "Enable AMReX OpenMP support" FORCE)
@@ -26,17 +28,13 @@ add_executable(robertson_vode
     src/main.cpp
 )
 
-# Locate the Microphysics tree. Prefer an in-tree checkout (../interfaces) but fall back to
-# ../Microphysics/* so this example can build standalone.
-set(MICROPHYSICS_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/..")
-if(EXISTS "${MICROPHYSICS_ROOT}/interfaces")
-    set(MICROPHYSICS_TREE "${MICROPHYSICS_ROOT}")
-elseif(EXISTS "${MICROPHYSICS_ROOT}/Microphysics/interfaces")
-    set(MICROPHYSICS_TREE "${MICROPHYSICS_ROOT}/Microphysics")
-else()
-    message(FATAL_ERROR "Could not locate Microphysics interfaces. Expected either '../interfaces' "
-        "or '../Microphysics/interfaces'.")
-endif()
+FetchContent_Declare(
+    microphysics
+    GIT_REPOSITORY https://github.com/AMReX-Astro/Microphysics
+    GIT_TAG        ${MICROPHYSICS_TAG}
+)
+FetchContent_MakeAvailable(microphysics)
+set(MICROPHYSICS_TREE "${microphysics_SOURCE_DIR}")
 
 target_include_directories(robertson_vode PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
